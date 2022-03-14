@@ -35,13 +35,13 @@ struct schedule {
 */
 struct coroutine {
 	coroutine_func func; // 协程所用的函数
-	void *ud;  // 协程参数
-	ucontext_t ctx; // 协程上下文
+	void *ud;  // 协程参数 -- 存储函数参数
+	ucontext_t ctx; // 协程上下文 ？
 	struct schedule * sch; // 该协程所属的调度器
-	ptrdiff_t cap; 	 // 已经分配的内存大小
-	ptrdiff_t size; // 当前协程运行时栈，保存起来后的大小
+	ptrdiff_t cap; 	 // 已经分配的内存大小 ？
+	ptrdiff_t size; // 当前协程运行时栈，保存起来后的大小 ？
 	int status;	// 协程当前的状态
-	char *stack; // 当前协程的保存起来的运行时栈
+	char *stack; // 当前协程的保存起来的运行时栈 ？
 };
 
 /*
