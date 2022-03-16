@@ -201,7 +201,7 @@ coroutine_resume(struct schedule * S, int id) {
 		getcontext(&C->ctx);
 		// 将当前协程的运行时栈的栈顶设置为S->stack
 		// 每个协程都这么设置，这就是所谓的共享栈。（注意，这里是栈顶）
-		C->ctx.uc_stack.ss_sp = S->stack; 
+		C->ctx.uc_stack.ss_sp = S->stack; // 每个协程真正上下文环境指向了调度器中的 stack;
 		C->ctx.uc_stack.ss_size = STACK_SIZE;
 		C->ctx.uc_link = &S->main_co_context; // 如果协程执行完，将切换到主协程中执行
 		S->cur_co_id = id;
@@ -233,21 +233,23 @@ coroutine_resume(struct schedule * S, int id) {
 * 
 */
 static void
-_save_stack(struct coroutine *C, char *top) {
+_save_stack(struct coroutine *C, char *stack_top) {
 	// 这个dummy很关键，是求取整个栈的关键
 	// 这个非常经典，涉及到linux的内存分布，栈是从高地址向低地址扩展，因此
 	// S->stack + STACK_SIZE就是运行时栈的栈底
 	// dummy，此时在栈中，肯定是位于最底的位置的，即栈顶
 	// top - &dummy 即整个栈的容量
-	char dummy = 0;
-	assert(top - &dummy <= STACK_SIZE);
-	if (C->mem_allocated < top - &dummy) {
+	char dummy = 0; // 在栈上最新使用一块内存，这就是当前的栈顶了；
+	char* stack_bottom = &dummy;
+
+	assert(stack_top - stack_bottom <= STACK_SIZE);
+	if (C->mem_allocated < stack_top - stack_bottom) {
 		free(C->stack);
-		C->mem_allocated = top-&dummy;
+		C->mem_allocated = stack_top-stack_bottom;
 		C->stack = malloc(C->mem_allocated);
 	}
-	C->mem_used = top - &dummy;
-	memcpy(C->stack, &dummy, C->mem_used);
+	C->mem_used = stack_top - stack_bottom;
+	memcpy(C->stack, stack_bottom, C->mem_used);
 }
 
 /**
@@ -264,14 +266,15 @@ coroutine_yield(struct schedule * S) {
 	assert((char *)&C > S->stack);
 
 	// 将当前运行的协程的栈内容保存起来
-	_save_stack(C,S->stack + STACK_SIZE);
+	char* stack_top = S->stack + STACK_SIZE;
+	_save_stack(C, stack_top);
 	
 	// 将当前栈的状态改为 挂起
 	C->status = COROUTINE_SUSPEND;
 	S->cur_co_id = -1;
 
-	// 所以这里可以看到，只能从协程切换到主协程中
-	swapcontext(&C->ctx , &S->main_co_context);
+	// 所以这里可以看到，只能从协程切换到主协程中, 这样就能挂起当前协程？
+	swapcontext(&C->ctx , &S->main_co_context);   
 }
 
 int 
