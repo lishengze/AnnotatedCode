@@ -64,8 +64,8 @@ struct stCoRoutineEnv_t
 	stCoEpoll_t *pEpoll;  //主要是epoll，作为协程的调度器
 
 	//for copy stack log lastco and nextco
-	stCoRoutine_t* pending_co;  
-	stCoRoutine_t* occupy_co;
+	stCoRoutine_t* pending_co;  // question? 
+	stCoRoutine_t* occupy_co;	// question?
 };
 
 //int socket(int domain, int type, int protocol);
@@ -776,7 +776,7 @@ void co_swap(stCoRoutine_t* curr, stCoRoutine_t* pending_co)
 		env->occupy_co = NULL;
 	}
 	else 
-	{   
+	{   // 采用共享栈，需要将当前栈的空间让给 接下来的栈？
 		// 如果采用了共享栈
 		env->pending_co = pending_co; 
 		
@@ -789,7 +789,7 @@ void co_swap(stCoRoutine_t* curr, stCoRoutine_t* pending_co)
 		// 将该共享栈的占用者改为pending_co
 		pending_co->stack_mem->occupy_co = pending_co;
 
-		env->occupy_co = occupy_co;
+		env->occupy_co = occupy_co;  // Why? 这个存储的是之前运行的 协程？
 		
 		if (occupy_co && occupy_co != pending_co)
 		{  

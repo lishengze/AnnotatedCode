@@ -73,7 +73,8 @@ struct stCoRoutine_t
 
 
 	//save satck buffer while conflict on same stack_buffer;
-	char* stack_sp; 
+	// 共享栈时使用的数据结构
+	char* stack_sp; // 栈底的地址
 	unsigned int save_size; // save_buffer的长度
 	char* save_buffer; // 当协程挂起时，栈的内容会栈暂存到save_buffer中
 

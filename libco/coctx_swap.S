@@ -26,34 +26,36 @@ coctx_swap:
 
 #if defined(__i386__)
    
-	leal 4(%esp), %eax //sp 
+	leal 4(%esp), %eax // 栈顶地址保存下来， 保存到eax. 载入第一个参数，第一个 coroutine 
 	movl 4(%esp), %esp 
-	leal 32(%esp), %esp //parm a : &regs[7] + sizeof(void*)
+	leal 32(%esp), %esp //parm a : &regs[7] + sizeof(void*) //将 coctx_t 指针指向的地址加上 32 个字节的内存位置加载到 esp 中
 
-	pushl %eax //esp ->parm a 
+	pushl %eax //esp ->parm a 将当前协程栈顶保存起来，以备下次调度回来时恢复栈地址。
 
-	pushl %ebp
+	pushl %ebp  // 第 13~18 ⾏：保存各通用寄存器的值，到 coctx_t 结构的 regs[1]~regs[6] 的位置。
 	pushl %esi
 	pushl %edi
 	pushl %edx
 	pushl %ecx
 	pushl %ebx
-	pushl -4(%eax)
+	pushl -4(%eax) // -4(%eax)实际上是指向原来 coctx_swap 刚进来时的栈顶，我们讲过栈顶的值是 call 指令自动压⼊的函数返回地址。
+				   // 这句实际上就是将 coctx_swap 的返回地址给保存起来了，放在coctx_t->regs[0] 的位置
 
-	
-	movl 4(%eax), %esp //parm b -> &regs[0]
+	movl 4(%eax), %esp //parm b -> &regs[0]  栈指针切到 pending 协程的 coctx_t 结构体开始，即 regs[0] 的位置，为恢复寄存器值做好了准备。
 
-	popl %eax  //ret func addr
-	popl %ebx  
+	popl %eax  //弹出 regs[0] 的值到 eax 寄存器。regs[0] 正该协程上次被切换出去时在第 41 ⾏保存的值，即 coctx_swap 的返回地址。 ret func addr
+	popl %ebx  // 从 regs[1]~regs[6] 恢复各寄存器的值（与之相应的是前面第 35~40 ⾏的压栈操作）。
 	popl %ecx
 	popl %edx
 	popl %edi
 	popl %esi
 	popl %ebp
 	popl %esp
-	pushl %eax //set ret func addr
+	pushl %eax //set ret func addr 将 pending 协程上次切换出去时的栈指针恢复（与之对应的是第 12 ⾏压栈操作）。
+			  // 请思考⼀下，栈内容已经完全恢复了吗？注意到第 8 ⾏我们讲过，当时保存的“栈顶”比真正的栈顶差了⼀个 4 字节的偏移。
+			  // ⽽这 4 字节真正栈顶的内容，正是coctx_swap 的返回地址。如果此时程序就执⾏ ret 指令返回，那程序就不知道会跑到哪去了。
 
-	xorl %eax, %eax
+	xorl %eax, %eax //清零 eax 寄存器，执⾏返回指令。
 	ret
 
 #elif defined(__x86_64__)
