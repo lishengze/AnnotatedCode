@@ -21,6 +21,9 @@
 #include <stdlib.h>
 #include <queue>
 #include "co_routine.h"
+
+#include "co_routine_inner.h"
+
 using namespace std;
 
 /**
@@ -45,9 +48,9 @@ void* Producer(void* args)
 		stTask_t* task = (stTask_t*)calloc(1, sizeof(stTask_t));
 		task->id = id++;
 		env->task_queue.push(task);
-		printf("%s:%d produce task %d\n", __func__, __LINE__, task->id);
-		co_cond_signal(env->cond);
-		poll(NULL, 0, 1000);
+		printf("\n******* %s.%d: produce task %d\n", __func__, __LINE__, task->id);
+		co_cond_signal(env->cond); // 似乎重复放入了一个timeout 事件；
+		poll(NULL, 0, 5000);
 	}
 	return NULL;
 }
@@ -65,11 +68,28 @@ void* Consumer(void* args)
 		}
 		stTask_t* task = env->task_queue.front();
 		env->task_queue.pop();
-		printf("%s:%d consume task %d\n", __func__, __LINE__, task->id);
+		printf("\n======= %s.%d:consume task %d\n", __func__, __LINE__, task->id);
 		free(task);
 	}
 	return NULL;
 }
+
+
+// void check_env(stCoCond_t* cond)
+// {
+// 	// 队列从中取出一个等待项，进行唤醒
+
+// 	if (cond->head)
+// 	stCoCondItem_t * sp = co_cond_pop( cond );
+// 	if( !sp ) 
+// 	{
+// 		printf("%s.%d: sp is null \n", __func__, __LINE__);
+// 	}
+// 	else
+// 	{
+// 		printf("%s.%d sp is not null", __func__, __LINE__);
+// 	}
+// }
 
 int main()
 {

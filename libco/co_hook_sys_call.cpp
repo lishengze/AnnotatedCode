@@ -615,6 +615,8 @@ extern int co_poll_inner( stCoEpoll_t *ctx,struct pollfd fds[], nfds_t nfds, int
 */
 int poll(struct pollfd fds[], nfds_t nfds, int timeout)
 {
+	printf("%s.%d: \n",__func__, __LINE__);
+
 	HOOK_SYS_FUNC( poll );
 
 	if( !co_is_enable_sys_hook() )
@@ -623,7 +625,7 @@ int poll(struct pollfd fds[], nfds_t nfds, int timeout)
 	}
 
 	// 在当前线程的epoll上，创建一个超时时间
-	return co_poll_inner( co_get_epoll_ct(),fds,nfds,timeout, g_sys_poll_func);
+	return co_poll_inner( co_get_epoll_ct(), fds, nfds, timeout, g_sys_poll_func);
 }
 
 int setsockopt(int fd, int level, int option_name,

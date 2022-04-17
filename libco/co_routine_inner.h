@@ -21,12 +21,16 @@
 
 #include "co_routine.h"
 #include "coctx.h"
+#include <string>
+using namespace std;
+
 struct stCoRoutineEnv_t;
 struct stCoSpec_t
 {
 	void *value;
 };
 
+struct stCoRoutine_t;
 /**
 * 一个共享栈的，这里就是共享栈的内存所在了
 * 一个进程或者线程栈的地址，是从高位到低位安排数据的，所以stack_bp是栈底，stack_buffer是栈顶
@@ -34,9 +38,11 @@ struct stCoSpec_t
 struct stStackMem_t
 {
 	stCoRoutine_t* occupy_co; // 当前正在使用该共享栈的协程
-	int stack_size;   // 栈的大小
-	char* stack_bp;   // stack_buffer + stack_size 栈底
-	char* stack_buffer; // 栈的内容，也就是栈顶
+	int 		   stack_size;   // 栈的大小
+	char* 		   stack_bp;   // stack_buffer + stack_size 栈底
+	char* 		   stack_buffer; // 栈的内容，也就是栈顶
+
+	string str();
 };
 
 /*
@@ -44,20 +50,30 @@ struct stStackMem_t
 */
 struct stShareStack_t
 {
-	unsigned int alloc_idx; // 应该是目前正在使用的那个共享栈的index
-	int stack_size; // 共享栈的大小，这里的大小指的是一个stStackMem_t*的大小
-	int count;   // 共享栈的个数，共享栈可以为多个，所以以下为共享栈的数组
-	stStackMem_t** stack_array; //栈的内容，这里是个数组，元素是stStackMem_t*
+	unsigned int 	alloc_idx; // 应该是目前正在使用的那个共享栈的index
+	int 			stack_size; // 共享栈的大小，这里的大小指的是一个stStackMem_t*的大小
+	int 			count;   // 共享栈的个数，共享栈可以为多个，所以以下为共享栈的数组
+	stStackMem_t** 	stack_array; //栈的内容，这里是个数组，元素是stStackMem_t*
+
+	string str() const
+	{
+		string result = "alloc_idx: " + std::to_string(alloc_idx)
+					+ ", stack_size: " + std::to_string(stack_size)
+					+ ", count: " + std::to_string(count); 
+		return result;
+	}
 };
 
 //协程
 struct stCoRoutine_t
 {
+	stCoRoutine_t() { id = global_id++;}
+
 	stCoRoutineEnv_t *env;  // 协程所在的运行环境，可以理解为，该协程所属的协程管理器
 	
-	pfn_co_routine_t pfn; // 协程所对应的函数
-	void *arg; // 函数参数
-	coctx_t ctx; // 协程上下文，包括寄存器和栈
+	pfn_co_routine_t  pfn; // 协程所对应的函数
+	void *			  arg; // 函数参数
+	coctx_t 		  ctx; // 协程上下文，包括寄存器和栈
  
 	// 以下用char表示了bool语义，节省空间
 	char cStart;          // 是否已经开始运行了
@@ -74,13 +90,39 @@ struct stCoRoutine_t
 
 	//save satck buffer while conflict on same stack_buffer;
 	// 共享栈时使用的数据结构
-	char* stack_sp; // 栈底的地址
-	unsigned int save_size; // save_buffer的长度
-	char* save_buffer; // 当协程挂起时，栈的内容会栈暂存到save_buffer中
+	char* 			stack_sp;    // 栈底的地址
+	unsigned int 	save_size;   // save_buffer的长度
+	char* 			save_buffer; // 当协程挂起时，栈的内容会栈暂存到save_buffer中
 
-	stCoSpec_t aSpec[1024]; 
+	stCoSpec_t 		aSpec[1024]; 
+
+	static int global_id;
+	int id;
+
+
+	string str() const 
+	{
+		string result = "id: " + std::to_string(id) 
+					  + ", cStart: " + std::to_string(int(cStart))
+					  + ", cEnd: " +  std::to_string(int(cEnd))
+					  + ", cIsMain: " + std::to_string(int(cIsMain))
+					  + ", cEnableSysHook: " + std::to_string(int(cEnableSysHook))
+					  + ", cIsShareStack: " + std::to_string(int(cIsShareStack))
+					  + "\n";
+	
+		if (cIsShareStack)
+		{
+			result += "stack_sp: " + string(stack_sp) 
+					  + ", save_size: " + std::to_string(save_size)
+					  + ", save_buffer" + string(save_buffer);
+		}
+		else
+		{
+			result += stack_mem->str();
+		}
+		return result;
+	}
 };
-
 
 
 //1.env

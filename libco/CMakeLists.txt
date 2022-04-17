@@ -15,11 +15,13 @@ enable_language(C ASM)
 
 # Add source files
 set(SOURCE_FILES
-        co_epoll.cpp
-        co_hook_sys_call.cpp
-        co_routine.cpp
-        coctx.cpp
-        coctx_swap.S)
+data_struct.cpp
+co_routine_inner.cpp
+co_epoll.cpp
+co_hook_sys_call.cpp
+co_routine.cpp
+coctx.cpp
+coctx_swap.S)
 
 # Add static and shared library target
 add_library(colib_static STATIC ${SOURCE_FILES})
