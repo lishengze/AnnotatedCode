@@ -1054,7 +1054,6 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 
 	printf("%s.%d stCoEpoll_t.info: %s\n", __func__, __LINE__, ctx->str().c_str());
 
-
 	// 获取当前协程
 	stCoRoutine_t* self = co_self();
 
@@ -1131,7 +1130,7 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 			ev.events = PollEvent2Epoll( fds[i].events );
 
 			// 将fd添加入epoll中
-			int ret = co_epoll_ctl( epfd,EPOLL_CTL_ADD, fds[i].fd, &ev );
+			int ret = co_epoll_ctl( epfd, EPOLL_CTL_ADD, fds[i].fd, &ev );
 
 			if (ret < 0 && errno == EPERM && nfds == 1 && pollfunc != NULL)
 			{
@@ -1158,9 +1157,9 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 	arg.ullExpireTime = now + timeout;	
 	
 	// 将其添加到超时链表中
-	int ret = AddTimeout( ctx->pTimeout, &arg, now );
+	int ret = AddTimeout(ctx->pTimeout, &arg, now );
 
-	printf("%s.%d add args to timeout list \n", __func__, __LINE__);
+	printf("%s.%d add args to timeout list , ctx->pTimeout: %s \n", __func__, __LINE__, ctx->pTimeout->str().c_str());
 
 	// 如果出错了
 	if( ret != 0 )
@@ -1322,7 +1321,7 @@ stCoCondItem_t *co_cond_pop( stCoCond_t *link );
 int co_cond_signal( stCoCond_t *si )
 {
 	// 队列从中取出一个等待项，进行唤醒, 其实就是一个超时事件；
-	printf("%s.%d: Original stCoCond_t.info: %s\n", __func__, __LINE__, si->str().c_str());
+	printf("%s.%d: Original stCoCond_t.info: \n%s\n", __func__, __LINE__, si->str().c_str());
 
 	stCoCondItem_t * sp = co_cond_pop( si );
 
@@ -1337,7 +1336,7 @@ int co_cond_signal( stCoCond_t *si )
 	AddTail( co_get_curr_thread_env()->pEpoll->pstActiveList, &sp->timeout );
 
 
-	printf("%s.%d: Add sp into tail! stCoCond_t.info: %s\n", __func__, __LINE__, si->str().c_str());
+	printf("%s.%d: Add sp into tail! stCoCond_t.info: \n%s\n", __func__, __LINE__, si->str().c_str());
 
 	return 0;
 }

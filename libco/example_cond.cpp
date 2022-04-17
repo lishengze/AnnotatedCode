@@ -40,22 +40,28 @@ struct stEnv_t
 };
 void* Producer(void* args)
 {
+	printf("\n^^^^^^^^^^^ %s.%d Producer Start!\n", __func__, __LINE__);
 	co_enable_hook_sys();
 	stEnv_t* env=  (stEnv_t*)args;
 	int id = 0;
-	while (true)
+
+	int test_count = 10;
+
+	while (true && test_count--)
 	{
 		stTask_t* task = (stTask_t*)calloc(1, sizeof(stTask_t));
 		task->id = id++;
 		env->task_queue.push(task);
 		printf("\n******* %s.%d: produce task %d\n", __func__, __LINE__, task->id);
-		co_cond_signal(env->cond); // 似乎重复放入了一个timeout 事件；
+		co_cond_signal(env->cond); // 似乎重复放入了一个 timeout 事件；
 		poll(NULL, 0, 5000);
 	}
 	return NULL;
 }
 void* Consumer(void* args)
 {
+	printf("\n~~~~~~~~~~~~~~ %s.%d Consumer Start!\n", __func__, __LINE__);
+
 	co_enable_hook_sys();
 	stEnv_t* env = (stEnv_t*)args;
 	// consumer会一直消费，直到为空后，调用co_cond_timedwait切出协程，等待再次不为空
@@ -66,6 +72,7 @@ void* Consumer(void* args)
 			co_cond_timedwait(env->cond, -1);
 			continue;
 		}
+
 		stTask_t* task = env->task_queue.front();
 		env->task_queue.pop();
 		printf("\n======= %s.%d:consume task %d\n", __func__, __LINE__, task->id);

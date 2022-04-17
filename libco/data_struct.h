@@ -86,13 +86,6 @@ struct stTimeoutItem_t
 
 	bool bTimeout; // 是否已经超时
 
-    string str() const
-    {
-        string result;
-
-        return result;
-    }
-
     static int s_id;
 
     int        id;
@@ -188,7 +181,7 @@ struct stCoEpoll_t
 	std::string str() { 
 		std::string result= "iEpollFd: " + std::to_string(iEpollFd) 
                             + "\npstTimeoutList: " + pstTimeoutList->str() 
-                            + "\npstActiveList: " + pstActiveList->str();
+                            + "pstActiveList: " + pstActiveList->str();
 
 		return result;
 	}

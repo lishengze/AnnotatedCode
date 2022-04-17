@@ -67,7 +67,7 @@ struct stShareStack_t
 //协程
 struct stCoRoutine_t
 {
-	stCoRoutine_t() { id = global_id++;}
+	stCoRoutine_t() { id = global_id++; printf("%s.%d create co %d\n", __func__, __LINE__, id);}
 
 	stCoRoutineEnv_t *env;  // 协程所在的运行环境，可以理解为，该协程所属的协程管理器
 	
@@ -110,16 +110,16 @@ struct stCoRoutine_t
 					  + ", cIsShareStack: " + std::to_string(int(cIsShareStack))
 					  + "\n";
 	
-		if (cIsShareStack)
-		{
-			result += "stack_sp: " + string(stack_sp) 
-					  + ", save_size: " + std::to_string(save_size)
-					  + ", save_buffer" + string(save_buffer);
-		}
-		else
-		{
-			result += stack_mem->str();
-		}
+		// if (cIsShareStack)
+		// {
+		// 	result += "stack_sp: " + string(stack_sp) 
+		// 			  + ", save_size: " + std::to_string(save_size)
+		// 			  + ", save_buffer" + string(save_buffer);
+		// }
+		// else
+		// {
+		// 	result += stack_mem->str();
+		// }
 		return result;
 	}
 };
