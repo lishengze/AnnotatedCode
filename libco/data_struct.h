@@ -104,6 +104,12 @@ struct stTimeoutItem_t
                 + ", ullExpireTime: " + std::to_string(ullExpireTime)
                 + ", bTimeout: " + std::to_string(int(bTimeout));
 
+        if (pArg) 
+        {
+            stCoRoutine_t *co = (stCoRoutine_t*)(pArg);
+            result += ", co.id: " + std::to_string(co->id);
+        }
+
         return result;
     }
 };

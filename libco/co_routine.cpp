@@ -601,7 +601,8 @@ void co_resume( stCoRoutine_t *co )
 
 	// 将指定协程放入线程的协程队列末尾
 	env->pCallStack[ env->iCallStackSize++ ] = co;
-	
+	printf("%s.%d [Add] co: \n%s \n", __func__, __LINE__, co->str().c_str());
+
 	// 将当前运行的上下文保存到lpCurrRoutine中，同时将协程co的上下文替换进去
 	// 执行完这一句，当前的运行环境就被替换为 co 了
 	co_swap( lpCurrRoutine, co );
@@ -615,6 +616,7 @@ void co_resume( stCoRoutine_t *co )
 */
 void co_yield_env( stCoRoutineEnv_t *env )
 {
+	// printf("")
 	// 这里直接取了iCallStackSize - 2，那么万一icallstacksize < 2呢？
 	// 所以这里实际上有个约束，就是co_yield之前必须先co_resume, 这样就不会造成这个问题了
 
@@ -626,12 +628,16 @@ void co_yield_env( stCoRoutineEnv_t *env )
 
 	env->iCallStackSize--;
 
+	printf("\n%s.%d:[Del] iCallStackSize: %d, pop curr co %d set to last co %d \n",
+		 __func__, __LINE__, env->iCallStackSize, curr->id, last->id);
+
 	// 把上下文当前的存储到curr中，并切换成last的上下文
 	co_swap( curr, last);
 }
 
 void co_yield_ct()
 {
+	printf("%s.%d co_yield_ct start! \n", __func__, __LINE__);
 	co_yield_env( co_get_curr_thread_env() );
 }
 
@@ -796,7 +802,7 @@ void co_init_curr_thread_env()
     
 	// 创建一个协程
 	struct stCoRoutine_t *self = co_create_env( env, NULL, NULL,NULL );
-	printf("%s.%d: create routine id: %d\n", __func__, __LINE__, self->id);
+	printf("%s.%d: [Add] routine id: %d\n", __func__, __LINE__, self->id);
 	
 	self->cIsMain = 1;	// 标识是一个主协程
 
@@ -825,7 +831,12 @@ stCoRoutineEnv_t *co_get_curr_thread_env()
 
 void OnPollProcessEvent( stTimeoutItem_t * ap )
 {
+	printf("%s.%d: OnPollProcessEvent-ap.info: %s \n", __func__, __LINE__, ap->str().c_str());
+
 	stCoRoutine_t *co = (stCoRoutine_t*)ap->pArg;
+
+	printf("%s.%d: co.info: %s \n", __func__, __LINE__, co->str().c_str());
+
 	co_resume( co );
 }
 
@@ -899,7 +910,7 @@ void co_eventloop( stCoEpoll_t *ctx,pfn_co_eventloop_t pfn,void *arg )
 
 		memset(timeout, 0, sizeof(stTimeoutItemLink_t));
 		
-		printf("%s.%d origianl active.size: %d, \n", __func__, __LINE__, list_size(active));
+		printf("%s.%d origianl active.list: \n%s\n", __func__, __LINE__, active->str().c_str());
 
 		// 处理active事件
 		for(int i=0;i<ret;i++)
@@ -922,7 +933,7 @@ void co_eventloop( stCoEpoll_t *ctx,pfn_co_eventloop_t pfn,void *arg )
 			}
 		}
 
-		printf("%s.%d Af add epoll ret active.size: %d, \n", __func__, __LINE__, list_size(active));
+		printf("%s.%d Af add epoll ret active.list: \n%s\n", __func__, __LINE__, active->str().c_str());
 
 		// 获取当前时刻
 		unsigned long long now = GetTickMS();
@@ -931,7 +942,7 @@ void co_eventloop( stCoEpoll_t *ctx,pfn_co_eventloop_t pfn,void *arg )
 		// 取出所有的超时事件，放入timeout 链表中
 		TakeAllTimeout(ctx->pTimeout, now, timeout);
 
-		printf("%s.%d After TakeAllTimeout timeout.size: %d, \n", __func__, __LINE__, list_size(timeout));
+		printf("%s.%d After TakeAllTimeout timeout.list: \n%s\n", __func__, __LINE__, timeout->str().c_str());
 
 		// 遍历所有的项，将bTimeout置为true
 		stTimeoutItem_t *lp = timeout->head;
@@ -945,7 +956,7 @@ void co_eventloop( stCoEpoll_t *ctx,pfn_co_eventloop_t pfn,void *arg )
 		// 将timeout合并到active上面
 		Join<stTimeoutItem_t, stTimeoutItemLink_t>(active, timeout);
 
-		printf("%s.%d Af add timeout active.size: %d, \n", __func__, __LINE__, list_size(active));
+		printf("%s.%d Af add timeout active.list: \n%s\n", __func__, __LINE__, active->str().c_str());
 
 		lp = active->head;
 		while( lp )
@@ -1406,6 +1417,7 @@ int co_cond_timedwait( stCoCond_t *link,int ms )
 	co_yield_ct();
 
 	stCoRoutine_t* self = co_self();
+
 	printf("%s.%d \ncurr_so.info: %s\n", __func__, __LINE__, self->str().c_str());
 
 	RemoveFromLink<stCoCondItem_t,stCoCond_t>( psi );
