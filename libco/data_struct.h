@@ -53,10 +53,16 @@ struct stCoRoutineEnv_t
     string str() {
         string result = "";
 
-        result += "iCallStackSize: " + std::to_string(iCallStackSize) + "\n"
-                + "pending_co.str: " + pending_co->str() + "\n"
-                + "occupy_co.str: " + occupy_co->str();
+        result += "iCallStackSize: " + std::to_string(iCallStackSize) + "\n";
 
+        if (pending_co) 
+        {
+            result += "pending_co.str: " + pending_co->str();
+        }
+        if (occupy_co)
+        {
+            result += "occupy_co.str: " + occupy_co->str();
+        }
         return result;
     }
 };
@@ -149,11 +155,11 @@ struct stTimeout_t
 
 	   这个数组在使用的过程中，会使用取模的方式，把它当做一个循环数组来使用，虽然并不是用循环链表来实现的
 	*/
-	stTimeoutItemLink_t *pItems;
-	int iItemSize;   // 默认为60*1000
+	stTimeoutItemLink_t *   pItems;
+	int                     iItemSize;   // 默认为60*1000
 
-	unsigned long long  ullStart; //目前的超时管理器最早的时间
-	long long           llStartIdx;  //目前最早的时间所对应的pItems上的索引
+	unsigned long long      ullStart;   //目前的超时管理器最早的时间
+	long long               llStartIdx; //目前最早的时间所对应的pItems上的索引
 
     string str() {
         string result = "pItems.str: " + pItems->str() + ", iItemSize: " + std::to_string(iItemSize)
@@ -219,9 +225,9 @@ struct stPollItem_t : public stTimeoutItem_t
 struct stCoCond_t;
 struct stCoCondItem_t 
 {
-	stCoCondItem_t *pPrev;
-	stCoCondItem_t *pNext;
-	stCoCond_t *pLink;
+	stCoCondItem_t  *pPrev;
+	stCoCondItem_t  *pNext;
+	stCoCond_t      *pLink;
 
 	stTimeoutItem_t timeout;
 

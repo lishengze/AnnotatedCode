@@ -53,8 +53,8 @@ void* Producer(void* args)
 		task->id = id++;
 		env->task_queue.push(task);
 		printf("\n******* %s.%d: produce task %d\n", __func__, __LINE__, task->id);
-		co_cond_signal(env->cond); // 似乎重复放入了一个 timeout 事件；
-		poll(NULL, 0, 5000);
+		co_cond_signal(env->cond); // 放入timeout 事件，是为了切换到其他协程；
+		poll(NULL, 0, 5000); // 增加一个 5000 后的超时事件，到时间切换到当前的协程；
 	}
 	return NULL;
 }
@@ -105,12 +105,15 @@ int main()
 
 	stCoRoutine_t* consumer_routine;
 	co_create(&consumer_routine, NULL, Consumer, env);
+	printf("\n%s.%d consumer_routine.info: %s \n", __func__, __LINE__, consumer_routine->str().c_str());
 	co_resume(consumer_routine);
 
 	stCoRoutine_t* producer_routine;
 	co_create(&producer_routine, NULL, Producer, env);
+	printf("\n%s.%d producer_routine.info: %s \n", __func__, __LINE__, producer_routine->str().c_str());
 	co_resume(producer_routine);
 	
+	printf("\n++++++++++++++ %s.%d Start EventLoop: \n", __func__, __LINE__);
 	co_eventloop(co_get_epoll_ct(), NULL, NULL);
 	return 0;
 }

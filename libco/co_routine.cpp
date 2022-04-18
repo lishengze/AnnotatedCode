@@ -501,10 +501,8 @@ struct stCoRoutine_t *co_create_env( stCoRoutineEnv_t * env, const stCoRoutineAt
 
 	// stCoRoutine_t *lp = (stCoRoutine_t*)malloc( sizeof(stCoRoutine_t) );
 
-	stCoRoutine_t *lp = new stCoRoutine_t;
-	
-	memset( lp,0,(long)(sizeof(stCoRoutine_t))); 
-
+	stCoRoutine_t *lp = new stCoRoutine_t();
+	// memset(lp, 0, (long)(sizeof(stCoRoutine_t))); 
 
 	lp->env = env;
 	lp->pfn = pfn;
@@ -561,7 +559,6 @@ int co_create( stCoRoutine_t **ppco,const stCoRoutineAttr_t *attr,pfn_co_routine
 
 	// 根据协程的运行环境，来创建一个协程
 	stCoRoutine_t *co = co_create_env( co_get_curr_thread_env(), attr, pfn,arg );
-
 	*ppco = co;
 	return 0;
 }
@@ -677,7 +674,15 @@ void co_swap(stCoRoutine_t* curr, stCoRoutine_t* pending_co)
 {
  	stCoRoutineEnv_t* env = co_get_curr_thread_env();
 
-	 printf("%s.%d, swap curr_co: %d, pending_co: %d \n", __func__, __LINE__, curr->id, pending_co->id);
+	printf("%s.%d, swap curr_co: %d, pending_co: %d \n", __func__, __LINE__, curr->id, pending_co->id);
+
+	string stack_co_info = "";
+	for (int k=0;k<env->iCallStackSize;k++)
+	{	
+		stack_co_info += env->pCallStack[k]->str();
+	}
+
+	printf("%s.%d, cur stack info: \n%s\n", __func__, __LINE__, stack_co_info.c_str());
 
 	//get curr stack sp
 	//这里非常重要!!!： 这个c变量的实现，作用是为了找到目前的栈底，因为c变量是最后一个放入栈中的内容。
@@ -806,6 +811,9 @@ void co_init_curr_thread_env()
 
 	stCoEpoll_t *ev = AllocEpoll();
 	SetEpoll( env,ev );
+
+	// printf("%s.%d [Init] env info: %s\n", __func__, __LINE__, env->str().c_str());
+	printf("%s.%d [Init] epoll.info: %s \n", __func__, __LINE__, ev->str().c_str());
 }
 
 
@@ -923,7 +931,7 @@ void co_eventloop( stCoEpoll_t *ctx,pfn_co_eventloop_t pfn,void *arg )
 		// 取出所有的超时事件，放入timeout 链表中
 		TakeAllTimeout(ctx->pTimeout, now, timeout);
 
-		printf("%s.%d timeout.size: %d, \n", __func__, __LINE__, list_size(timeout));
+		printf("%s.%d After TakeAllTimeout timeout.size: %d, \n", __func__, __LINE__, list_size(timeout));
 
 		// 遍历所有的项，将bTimeout置为true
 		stTimeoutItem_t *lp = timeout->head;
@@ -954,6 +962,7 @@ void co_eventloop( stCoEpoll_t *ctx,pfn_co_eventloop_t pfn,void *arg )
 				 */
 				printf("%s.%d: run pfnProcess! \n", __func__, __LINE__);
 				lp->pfnProcess( lp );
+
 			}
 
 			lp = active->head;
@@ -1072,14 +1081,14 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 
 	stPollItem_t arr[2];
 
-	printf("%s.%d: nfds: %u, sizeof(arr): %u,  sizeof(arr[0]): %u, self->cIsShareStack: %c \n", 
-			__func__, __LINE__, nfds, sizeof(arr), sizeof(arr[0]), self->cIsShareStack);
+	printf("%s.%d: nfds: %u, sizeof(arr): %u,  sizeof(arr[0]): %u, self->cIsShareStack: %d \n", 
+			__func__, __LINE__, nfds, sizeof(arr), sizeof(arr[0]), int(self->cIsShareStack));
 
 	if( nfds < sizeof(arr) / sizeof(arr[0]) && !self->cIsShareStack)
 	{
 		printf("%s.%d not share stack, pPollItems set to arr \n", __func__, __LINE__);
-		// 如果监听的描述符只有1个或者0个， 并且目前的不是共享栈模型
-		arg.pPollItems = arr;
+		// 如果监听的描述符只有1个或者0个， 并且目前的不是共享栈模型0
+		arg.pPollItems = arr; // why?
 	}	
 	else
 	{
@@ -1159,7 +1168,8 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 	// 将其添加到超时链表中
 	int ret = AddTimeout(ctx->pTimeout, &arg, now );
 
-	printf("%s.%d add args to timeout list , ctx->pTimeout: %s \n", __func__, __LINE__, ctx->pTimeout->str().c_str());
+	printf("%s.%d add args to timeout list, ctx->pTimeout: %s \n", 
+			__func__, __LINE__, ctx->pTimeout->str().c_str());
 
 	// 如果出错了
 	if( ret != 0 )
@@ -1182,6 +1192,9 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 	// 注册完事件，就yield。切换到其他协程
 	// 当事件到来的时候，就会调用callback。
 	co_yield_env( co_get_curr_thread_env() );
+
+	printf("%s.%d [After] co_yield_env \nco.info: %s \n", 
+			__func__, __LINE__, co_self()->str().c_str());
 
 	// --------------------分割线---------------------------
 	// 注意：！！这个时候，已经和上面的逻辑不在同一个时刻处理了
@@ -1233,7 +1246,7 @@ void SetEpoll( stCoRoutineEnv_t *env,stCoEpoll_t *ev )
 */
 stCoEpoll_t *co_get_epoll_ct()
 {
-	printf("%s.%d:\n", __func__, __LINE__);
+	printf("%s.%d start! \n", __func__, __LINE__);
 
 	if( !co_get_curr_thread_env() )
 	{
@@ -1336,7 +1349,8 @@ int co_cond_signal( stCoCond_t *si )
 	AddTail( co_get_curr_thread_env()->pEpoll->pstActiveList, &sp->timeout );
 
 
-	printf("%s.%d: Add sp into tail! stCoCond_t.info: \n%s\n", __func__, __LINE__, si->str().c_str());
+	printf("%s.%d: Add sp into tail! stCoCond_t.info: \n%s\npEpoll->pstActiveList: \n%s\n", 
+			__func__, __LINE__, si->str().c_str(), co_get_curr_thread_env()->pEpoll->str().c_str());
 
 	return 0;
 }
@@ -1368,6 +1382,8 @@ int co_cond_broadcast( stCoCond_t *si )
 */
 int co_cond_timedwait( stCoCond_t *link,int ms )
 {
+	printf("\n%s.%d co_cond_timedwait start!\n", __func__, __LINE__);
+
 	stCoCondItem_t* psi = (stCoCondItem_t*)calloc(1, sizeof(stCoCondItem_t));
 	psi->timeout.pArg = GetCurrThreadCo();
 	psi->timeout.pfnProcess = OnSignalProcessEvent;
@@ -1377,7 +1393,7 @@ int co_cond_timedwait( stCoCond_t *link,int ms )
 		unsigned long long now = GetTickMS();
 		psi->timeout.ullExpireTime = now + ms;
 
-		int ret = AddTimeout( co_get_curr_thread_env()->pEpoll->pTimeout,&psi->timeout,now );
+		int ret = AddTimeout(co_get_curr_thread_env()->pEpoll->pTimeout, &psi->timeout, now);
 		if( ret != 0 )
 		{
 			free(psi);
@@ -1385,10 +1401,12 @@ int co_cond_timedwait( stCoCond_t *link,int ms )
 		}
 	}
 	
-	AddTail( link, psi);
+	AddTail(link, psi);
 
 	co_yield_ct();
 
+	stCoRoutine_t* self = co_self();
+	printf("%s.%d \ncurr_so.info: %s\n", __func__, __LINE__, self->str().c_str());
 
 	RemoveFromLink<stCoCondItem_t,stCoCond_t>( psi );
 	free(psi);

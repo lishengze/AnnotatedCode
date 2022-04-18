@@ -21,6 +21,9 @@
 
 #include "co_routine.h"
 #include "coctx.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <string>
 using namespace std;
 
@@ -67,7 +70,12 @@ struct stShareStack_t
 //协程
 struct stCoRoutine_t
 {
-	stCoRoutine_t() { id = global_id++; printf("%s.%d create co %d\n", __func__, __LINE__, id);}
+	stCoRoutine_t() 
+	{ 
+		memset(this, 0, (long)(sizeof(stCoRoutine_t))); 
+		id = global_id++; 
+		printf("%s.%d create co %d\n", __func__, __LINE__, id);
+	}
 
 	stCoRoutineEnv_t *env;  // 协程所在的运行环境，可以理解为，该协程所属的协程管理器
 	
@@ -96,8 +104,8 @@ struct stCoRoutine_t
 
 	stCoSpec_t 		aSpec[1024]; 
 
-	static int global_id;
-	int id;
+	static int 		global_id;
+	int 			id;
 
 
 	string str() const 
