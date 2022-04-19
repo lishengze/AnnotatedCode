@@ -53,7 +53,7 @@ void* Producer(void* args)
 		task->id = id++;
 		env->task_queue.push(task);
 		printf("\n******* %s.%d: produce task %d\n", __func__, __LINE__, task->id);
-		co_cond_signal(env->cond); // 放入timeout 事件，是为了切换到其他协程；
+		co_cond_signal(env->cond); // 放入 consumer 设置的条件变量，用于切换到 consumer co；
 		poll(NULL, 0, 5000); // 增加一个 5000 后的超时事件，到时间切换到当前的协程；
 	}
 	return NULL;
@@ -69,7 +69,7 @@ void* Consumer(void* args)
 	{
 		if (env->task_queue.empty())
 		{
-			co_cond_timedwait(env->cond, -1); // 貌似就是为了切换到主Co;
+			co_cond_timedwait(env->cond, -1); // 设置全局的 条件变量, 
 			continue;
 		}
 

@@ -81,7 +81,7 @@ static void SetAddr(const char *pszIP,const unsigned short shPort,struct sockadd
 
 static int CreateTcpSocket(const unsigned short shPort  = 0 ,const char *pszIP  = "*" ,bool bReuse  = false )
 {
-	int fd = socket(AF_INET,SOCK_STREAM, IPPROTO_TCP);
+	int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if( fd >= 0 )
 	{
 		if(shPort != 0)
@@ -108,31 +108,36 @@ static void *poll_routine( void *arg )
 {
 	co_enable_hook_sys();
 
-	vector<task_t> &v = *(vector<task_t>*)arg;
-	for(size_t i=0;i<v.size();i++)
+	vector<task_t> &task_vec = *(vector<task_t>*)arg;
+
+	// 创建 socket;
+	for(size_t i=0;i<task_vec.size();i++)
 	{
 		int fd = CreateTcpSocket();
-		SetNonBlock( fd );
-		v[i].fd = fd;
+		SetNonBlock( fd ); // ?
+		task_vec[i].fd = fd;
 
-		int ret = connect(fd,(struct sockaddr*)&v[i].addr,sizeof( v[i].addr )); 
+		int ret = connect(fd, (struct sockaddr*)&task_vec[i].addr, sizeof( task_vec[i].addr)); //? 为什么现在就连接； 
 		printf("co %p connect i %ld ret %d errno %d (%s)\n",
-			co_self(),i,ret,errno,strerror(errno));
+				co_self(),i,ret,errno,strerror(errno));
 	}
-	struct pollfd *pf = (struct pollfd*)calloc( 1,sizeof(struct pollfd) * v.size() );
 
-	for(size_t i=0;i<v.size();i++)
+	// 
+	struct pollfd *pf = (struct pollfd*)calloc(1, sizeof(struct pollfd) * task_vec.size());
+	for(size_t i=0;i<task_vec.size();i++)
 	{
-		pf[i].fd = v[i].fd;
-		pf[i].events = ( POLLOUT | POLLERR | POLLHUP );
+		pf[i].fd = task_vec[i].fd;
+		pf[i].events = (POLLOUT | POLLERR | POLLHUP);
 	}
 	set<int> setRaiseFds;
-	size_t iWaitCnt = v.size();
+
+	size_t iWaitCnt = task_vec.size();
+
 	for(;;)
 	{
-		int ret = poll( pf,iWaitCnt,1000 );
-		printf("co %p poll wait %ld ret %d\n",
-				co_self(),iWaitCnt,ret);
+		int ret = poll(pf, iWaitCnt, 1000);
+		printf("co.info: %p poll wait %ld ret %d\n",
+				co_self(), iWaitCnt, ret);
 		for(int i=0;i<ret;i++)
 		{
 			printf("co %p fire fd %d revents 0x%X POLLOUT 0x%X POLLERR 0x%X POLLHUP 0x%X\n",
@@ -145,7 +150,7 @@ static void *poll_routine( void *arg )
 					);
 			setRaiseFds.insert( pf[i].fd );
 		}
-		if( setRaiseFds.size() == v.size())
+		if( setRaiseFds.size() == task_vec.size())
 		{
 			break;
 		}
@@ -155,24 +160,24 @@ static void *poll_routine( void *arg )
 		}
 
 		iWaitCnt = 0;
-		for(size_t i=0;i<v.size();i++)
+		for(size_t i=0;i<task_vec.size();i++)
 		{
-			if( setRaiseFds.find( v[i].fd ) == setRaiseFds.end() )
+			if( setRaiseFds.find( task_vec[i].fd ) == setRaiseFds.end() )
 			{
-				pf[ iWaitCnt ].fd = v[i].fd;
+				pf[ iWaitCnt ].fd = task_vec[i].fd;
 				pf[ iWaitCnt ].events = ( POLLOUT | POLLERR | POLLHUP );
 				++iWaitCnt;
 			}
 		}
 	}
-	for(size_t i=0;i<v.size();i++)
+	for(size_t i=0;i<task_vec.size();i++)
 	{
-		close( v[i].fd );
-		v[i].fd = -1;
+		close( task_vec[i].fd );
+		task_vec[i].fd = -1;
 	}
 
 	printf("co %p task cnt %ld fire %ld\n",
-			co_self(),v.size(),setRaiseFds.size() );
+			co_self(),task_vec.size(),setRaiseFds.size() );
 	return 0;
 }
 int main(int argc,char *argv[])
@@ -196,9 +201,9 @@ int main(int argc,char *argv[])
 		stCoRoutine_t *co = 0;
 		vector<task_t> *v2 = new vector<task_t>();
 		*v2 = v;
-		co_create( &co,NULL,poll_routine,v2 );
+		co_create(&co, NULL, poll_routine, v2);
 		printf("routine i %d\n",i);
-		co_resume( co );
+		co_resume(co);
 	}
 
 	co_eventloop( co_get_epoll_ct(),0,0 );

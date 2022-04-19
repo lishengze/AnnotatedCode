@@ -625,7 +625,7 @@ int poll(struct pollfd fds[], nfds_t nfds, int timeout)
 	}
 
 	// 在当前线程的epoll上，创建一个超时时间
-	return co_poll_inner( co_get_epoll_ct(), fds, nfds, timeout, g_sys_poll_func);
+	return co_poll_inner(co_get_epoll_ct(), fds, nfds, timeout, g_sys_poll_func);
 }
 
 int setsockopt(int fd, int level, int option_name,

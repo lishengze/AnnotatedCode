@@ -1418,7 +1418,7 @@ int co_cond_timedwait( stCoCond_t *link,int ms )
 
 	stCoRoutine_t* self = co_self();
 
-	printf("%s.%d \ncurr_so.info: %s\n", __func__, __LINE__, self->str().c_str());
+	printf("%s.%d \n remove last conditional var, curr_so.info: %s\n", __func__, __LINE__, self->str().c_str());
 
 	RemoveFromLink<stCoCondItem_t,stCoCond_t>( psi );
 	free(psi);
