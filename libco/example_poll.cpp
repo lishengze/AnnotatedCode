@@ -42,9 +42,9 @@ using namespace std;
 
 struct task_t
 {
-	stCoRoutine_t *co;
-	int fd;
-	struct sockaddr_in addr;
+	stCoRoutine_t *		co;
+	int 				fd;
+	struct sockaddr_in 	addr;
 };
 
 static int SetNonBlock(int iSock)
@@ -106,6 +106,8 @@ static int CreateTcpSocket(const unsigned short shPort  = 0 ,const char *pszIP  
 
 static void *poll_routine( void *arg )
 {
+	printf("\n---------------- %s.%d poll_routine start! --------------\n", __func__, __LINE__);
+
 	co_enable_hook_sys();
 
 	vector<task_t> &task_vec = *(vector<task_t>*)arg;
@@ -122,7 +124,7 @@ static void *poll_routine( void *arg )
 				co_self(),i,ret,errno,strerror(errno));
 	}
 
-	// 
+	// 为每个 task 创建pollfd
 	struct pollfd *pf = (struct pollfd*)calloc(1, sizeof(struct pollfd) * task_vec.size());
 	for(size_t i=0;i<task_vec.size();i++)
 	{

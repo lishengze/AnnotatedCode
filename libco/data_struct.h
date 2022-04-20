@@ -31,6 +31,8 @@ struct stCoEpoll_t;
 typedef void (*OnPreparePfn_t)( stTimeoutItem_t *,struct epoll_event &ev, stTimeoutItemLink_t *active );
 typedef void (*OnProcessPfn_t)( stTimeoutItem_t *);
 
+typedef int (*poll_pfn_t)(struct pollfd fds[], nfds_t nfds, int timeout);
+
 /*
 * 线程所管理的协程的运行环境
 * 一个线程只有一个这个属性
@@ -205,24 +207,42 @@ struct stPollItem_t ;
 
 struct stPoll_t : public stTimeoutItem_t 
 {
-	struct pollfd *fds;
-	nfds_t nfds; // typedef unsigned long int nfds_t;
+    stPoll_t(const nfds_t& nfds_v, const int& epollfd, OnProcessPfn_t process_func , stCoRoutine_t* co) 
+    { 
+        memset(this, 0, sizeof(stPoll_t));
 
-	stPollItem_t *pPollItems;  // 其中的 pPollItems
+        iEpollFd = epollfd;        
+        nfds     = nfds_v;       
+        fds      = (pollfd*)calloc(nfds, sizeof(pollfd));
 
-	int iAllEventDetach; // 标识是否已经处理过了这个对象了
+        pfnProcess  = process_func;
+        pArg        = co;
+    }
 
-	int iEpollFd;
+    void init_poll_items(struct pollfd fds[], nfds_t nfds, stCoRoutine_t* self);
 
+    int add_poll_items(struct pollfd fds[], const nfds_t nfds, const int epfd, const int timeout,  
+                        OnPreparePfn_t prepare_func, poll_pfn_t pollfunc);
+
+    // int add_timeout_items( stCoEpoll_t *ctx, struct pollfd fds[], const nfds_t nfds, const int epfd, const int timeout,  
+    //                         OnPreparePfn_t prepare_func, poll_pfn_t pollfunc);
+
+
+	struct pollfd*  fds;
+	nfds_t          nfds; // typedef unsigned long int nfds_t;
+
+	stPollItem_t *  pPollItems;  // 其中的 pPollItems
+	int iAllEventDetach;         // 标识是否已经处理过了这个对象了
+	int iEpollFd;                // epoll instance
 	int iRaiseCnt;  // poll的active的事件个数
 };
 
 struct stPollItem_t : public stTimeoutItem_t
 {
-	struct pollfd *pSelf;
-	stPoll_t *pPoll;
+	struct pollfd *     pSelf;
+	stPoll_t *          pPoll;
 
-	struct epoll_event stEvent;
+	struct epoll_event  stEvent;
 };
 
 /*

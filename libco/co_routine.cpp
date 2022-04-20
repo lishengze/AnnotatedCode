@@ -750,27 +750,6 @@ void co_swap(stCoRoutine_t* curr, stCoRoutine_t* pending_co)
 }
 
 
-/*
- *   EPOLLPRI 		POLLPRI    // There is urgent data to read.  
- *   EPOLLMSG 		POLLMSG
- *
- *   				POLLREMOVE
- *   				POLLRDHUP
- *   				POLLNVAL
- *
- * */
-static uint32_t PollEvent2Epoll( short events )
-{
-	uint32_t e = 0;	
-	if( events & POLLIN ) 	e |= EPOLLIN;
-	if( events & POLLOUT )  e |= EPOLLOUT;
-	if( events & POLLHUP ) 	e |= EPOLLHUP;
-	if( events & POLLERR )	e |= EPOLLERR;
-	if( events & POLLRDNORM ) e |= EPOLLRDNORM;
-	if( events & POLLWRNORM ) e |= EPOLLWRNORM;
-	return e;
-}
-
 static short EpollEvent2Poll( uint32_t events )
 {
 	short e = 0;	
@@ -1048,21 +1027,7 @@ stCoRoutine_t *GetCurrThreadCo( )
 }
 
 
-
-typedef int (*poll_pfn_t)(struct pollfd fds[], nfds_t nfds, int timeout);
-
-/**
-* 
-* 这个函数也极其重要
-* 1. 大部分的sys_hook都需要用到这个函数来把事件注册到epoll中
-* 2. 这个函数会把poll事件转换为epoll事件
-* 
-* @param ctx epoll上下文
-* @param fds[] fds 要监听的文件描述符 原始poll函数的参数，
-* @param nfds  nfds fds的数组长度 原始poll函数的参数
-* @param timeout timeout 等待的毫秒数 原始poll函数的参数
-* @param pollfunc 原始的poll函数, g_sys_poll_func
-*/
+/*
 int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeout, poll_pfn_t pollfunc)
 {
 	if( timeout > stTimeoutItem_t::eMaxTimeout )
@@ -1080,18 +1045,34 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 	printf("%s.%d self.co: %s\n", __func__, __LINE__, self->str().c_str());
 
 	//1.struct change
-
 	printf("%s.%d Create StPoll_t \n", __func__, __LINE__);
 
-	stPoll_t& arg = *((stPoll_t*)malloc(sizeof(stPoll_t)));
-	memset( &arg,0,sizeof(arg) );
+	// stPoll_t& arg = *((stPoll_t*)malloc(sizeof(stPoll_t)));
+	// memset( &arg,0,sizeof(arg) );
 
-	arg.iEpollFd = epfd;
-	arg.fds = (pollfd*)calloc(nfds, sizeof(pollfd));
-	arg.nfds = nfds;
+	// arg.iEpollFd = epfd;
+	// arg.fds = (pollfd*)calloc(nfds, sizeof(pollfd));
+	// arg.nfds = nfds;
+
+	// // 当事件到来的时候，就调用这个callback。
+	// // 这个callback内部做了co_resume的动作
+
+	// printf("%s.%d: set pfnProcess to  OnPollProcessEvent! \n", __func__, __LINE__);
+	// arg.pfnProcess = OnPollProcessEvent;
+	
+
+	// // 保存当前协程，便于调用OnPollProcessEvent时恢复协程
+	// // 这里取到的值不是和co_self一样吗？为什么不用co_self
+	
+	// stCoRoutine_t * curr_co = GetCurrCo( co_get_curr_thread_env() );
+	// arg.pArg = curr_co;
+	
+	stPoll_t& arg = *(new stPoll_t(nfds, epfd, OnPollProcessEvent, co_self()));	
+	// printf("%s.%d: Save Curr Co To pArg: %d \n", __func__, __LINE__, curr_co->id);
 
 	stPollItem_t arr[2];
 
+	// Init pPollItems: PollItems 与 是否是共享栈有什么关系 why?
 	printf("%s.%d: nfds: %u, sizeof(arr): %u,  sizeof(arr[0]): %u, self->cIsShareStack: %d \n", 
 			__func__, __LINE__, nfds, sizeof(arr), sizeof(arr[0]), int(self->cIsShareStack));
 
@@ -1105,27 +1086,12 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 	{
 		printf("%s.%d use share stack, or monitor more than 2 fids, malloc new space %d for pPollItems \n", 
 				__func__, __LINE__, nfds * sizeof( stPollItem_t ));
-		// 如果监听的描述符在2个以上，或者协程本身采用共享栈
-		arg.pPollItems = (stPollItem_t*)malloc( nfds * sizeof( stPollItem_t ) );
+		// 如果监听的描述符在2个以上，或者协程本身采用共享栈, 
+		arg.pPollItems = (stPollItem_t*)malloc(nfds * sizeof( stPollItem_t ) );
 	}
 	
-	memset( arg.pPollItems,0,nfds * sizeof(stPollItem_t) );
+	memset(arg.pPollItems, 0, nfds * sizeof(stPollItem_t) );
 
-	// 当事件到来的时候，就调用这个callback。
-	// 这个callback内部做了co_resume的动作
-
-	printf("%s.%d: set pfnProcess to  OnPollProcessEvent! \n", __func__, __LINE__);
-	arg.pfnProcess = OnPollProcessEvent;
-	
-
-	// 保存当前协程，便于调用OnPollProcessEvent时恢复协程
-	// 这里取到的值不是和co_self一样吗？为什么不用co_self
-	
-	stCoRoutine_t * curr_co = GetCurrCo( co_get_curr_thread_env() );
-	arg.pArg = curr_co;
-
-	printf("%s.%d: Save Curr Co To pArg: %d \n", __func__, __LINE__, curr_co->id);
-	
 	//2. add epoll
 	for(nfds_t i=0;i<nfds;i++)
 	{
@@ -1236,6 +1202,115 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 		arg.pPollItems = NULL;
 	}
 
+	free(arg.fds);
+	free(&arg);
+
+	return iRaiseCnt;
+}
+*/
+/**
+* 
+* 这个函数也极其重要
+* 1. 大部分的sys_hook都需要用到这个函数来把事件注册到epoll中
+* 2. 这个函数会把poll事件转换为epoll事件
+* 
+* @param ctx epoll上下文
+* @param fds[] fds 要监听的文件描述符 原始poll函数的参数，
+* @param nfds  nfds fds的数组长度 原始poll函数的参数
+* @param timeout timeout 等待的毫秒数 原始poll函数的参数
+* @param pollfunc 原始的poll函数, g_sys_poll_func
+*/
+int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeout, poll_pfn_t pollfunc)
+{
+	if( timeout > stTimeoutItem_t::eMaxTimeout )
+	{
+		timeout = stTimeoutItem_t::eMaxTimeout;
+	}
+
+	int epfd = ctx->iEpollFd;
+
+	printf("%s.%d stCoEpoll_t.info: %s\n", __func__, __LINE__, ctx->str().c_str());
+
+	// 获取当前协程
+	stCoRoutine_t* self_co = co_self();
+
+	printf("%s.%d self.co: %s\n", __func__, __LINE__, self_co->str().c_str());
+
+	//1.struct change
+	printf("%s.%d Create StPoll_t \n", __func__, __LINE__);
+	
+	stPoll_t& arg = *(new stPoll_t(nfds, epfd, OnPollProcessEvent, self_co));	
+	
+	arg.init_poll_items(fds, nfds, self_co);
+
+	if (!arg.add_poll_items(fds, nfds, epfd, timeout, OnPollPreparePfn, pollfunc))
+	{
+		delete &arg;
+		return -__LINE__;
+	}
+
+
+
+	//3.add timeout
+	// 获取当前时间
+	unsigned long long now = GetTickMS();
+
+	arg.ullExpireTime = now + timeout;	
+	
+	// 将其添加到超时链表中
+	int ret = AddTimeout(ctx->pTimeout, &arg, now );
+
+	printf("%s.%d add args to timeout list, ctx->pTimeout: %s \n", 
+			__func__, __LINE__, ctx->pTimeout->str().c_str());
+
+	// 如果出错了
+	if( ret != 0 )
+	{
+		co_log_err("CO_ERR: AddTimeout ret %d now %lld timeout %d arg.ullExpireTime %lld",
+				ret,now,timeout,arg.ullExpireTime);
+		errno = EINVAL;
+
+		free( arg.pPollItems );
+		arg.pPollItems = NULL;		
+		free(arg.fds);
+		free(&arg);
+
+		return -__LINE__;
+	}
+
+	// 注册完事件，就yield。切换到其他协程
+	// 当事件到来的时候，就会调用callback。
+	co_yield_env( co_get_curr_thread_env() );
+
+	printf("%s.%d [After] co_yield_env \nco.info: %s \n", 
+			__func__, __LINE__, co_self()->str().c_str());
+
+	// --------------------分割线---------------------------
+	// 注意：！！这个时候，已经和上面的逻辑不在同一个时刻处理了
+	// 这个时候，协程已经resume回来了！！
+
+	// 清理数据
+
+	// 将该项从超时链表中删除
+	RemoveFromLink<stTimeoutItem_t,stTimeoutItemLink_t>( &arg );
+
+	// 将该项涉及事件全部从epoll中删除掉
+	// 事件一定要删除，不删除会出现误resume的问题
+	for(nfds_t i = 0;i < nfds;i++)
+	{
+		int fd = fds[i].fd;
+		if( fd > -1 )
+		{
+			co_epoll_ctl( epfd,EPOLL_CTL_DEL,fd,&arg.pPollItems[i].stEvent );
+		}
+		fds[i].revents = arg.fds[i].revents;
+	}
+
+	// 释放内存啦
+	int iRaiseCnt = arg.iRaiseCnt;
+
+	free( arg.pPollItems );
+	arg.pPollItems = NULL;
 	free(arg.fds);
 	free(&arg);
 
