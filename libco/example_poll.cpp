@@ -33,6 +33,10 @@
 #include <vector>
 #include <set>
 #include <unistd.h>
+#include <thread>
+#include <chrono>
+
+#include "data_struct.h"
 
 #ifdef __FreeBSD__
 #include <cstring>
@@ -45,6 +49,9 @@ struct task_t
 	stCoRoutine_t *		co;
 	int 				fd;
 	struct sockaddr_in 	addr;
+
+	string              ip;
+	int                 port;
 };
 
 static int SetNonBlock(int iSock)
@@ -81,7 +88,10 @@ static void SetAddr(const char *pszIP,const unsigned short shPort,struct sockadd
 
 static int CreateTcpSocket(const unsigned short shPort  = 0 ,const char *pszIP  = "*" ,bool bReuse  = false )
 {
+	printf("%s.%d create tcp socket %s:%u \n", __func__, __LINE__, pszIP, shPort);
+
 	int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
 	if( fd >= 0 )
 	{
 		if(shPort != 0)
@@ -96,71 +106,136 @@ static int CreateTcpSocket(const unsigned short shPort  = 0 ,const char *pszIP  
 			int ret = bind(fd,(struct sockaddr*)&addr,sizeof(addr));
 			if( ret != 0)
 			{
+
+				printf("%s.%d:[Error] create tcp socket %s:%u Failed! Close Fd: %d \n", __func__, __LINE__, pszIP, shPort, fd);
 				close(fd);
 				return -1;
 			}
 		}
 	}
+
+	printf("%s.%d create tcp socket %s:%u , fd: %d, over!\n", __func__, __LINE__, pszIP, shPort, fd);
+
 	return fd;
 }
 
-static void *poll_routine( void *arg )
+
+static int CreateTcpSocket(struct sockaddr_in& addr ,bool bReuse  = false )
 {
-	printf("\n---------------- %s.%d poll_routine start! --------------\n", __func__, __LINE__);
+	printf("%s.%d create tcp socket\n", __func__, __LINE__);
 
-	co_enable_hook_sys();
+	int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
-	vector<task_t> &task_vec = *(vector<task_t>*)arg;
+	if( fd >= 0 )
+	{
+		if(bReuse)
+		{
+			int nReuseAddr = 1;
+			setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&nReuseAddr,sizeof(nReuseAddr));
+		}
 
+		int ret = bind(fd, (struct sockaddr*)&addr, sizeof(addr));
+		if( ret != 0)
+		{
+
+			printf("%s.%d:[Error] create tcp socket Failed! Close Fd: %d \n", __func__, __LINE__, fd);
+			close(fd);
+			return -1;
+		}		
+	}
+
+	printf("%s.%d create tcp socket fd: %d over!\n", __func__, __LINE__, fd);
+
+	return fd;
+}
+
+
+
+void init_task(vector<task_t> & task_vec) 
+{
+	printf("\n%s.%d: init_task \n", __func__, __LINE__);
 	// 创建 socket;
 	for(size_t i=0;i<task_vec.size();i++)
 	{
-		int fd = CreateTcpSocket();
-		SetNonBlock( fd ); // ?
+		// int fd = CreateTcpSocket(task_vec[i].addr);
+
+		int fd = CreateTcpSocket(task_vec[i].port, task_vec[i].ip.c_str());
+
+		// printf("1\n");
+
+		if (fd <= 0) 
+		{
+			printf("%s.%d:[Error] CreateTcpSocket failed!\n", __func__, __LINE__);
+			continue;
+		}
+
+		SetNonBlock( fd );  // ?
+
+		// printf("2\n");
 		task_vec[i].fd = fd;
 
-		int ret = connect(fd, (struct sockaddr*)&task_vec[i].addr, sizeof( task_vec[i].addr)); //? 为什么现在就连接； 
-		printf("co %p connect i %ld ret %d errno %d (%s)\n",
-				co_self(),i,ret,errno,strerror(errno));
+		struct sockaddr* address = (struct sockaddr*)&task_vec[i].addr;
+
+		// printf("3\n");
+
+		int ret = connect(fd, address, sizeof(task_vec[i].addr)); //? 为什么现在就连接； 
+
+		printf("%s.%d: connnect  co.info: %p, ret: %d \n", __func__, __LINE__, co_self(), ret);
+
+		// printf("co %s connect i %ld,  ret %d errno %d (%s)\n",
+		// 		co_self()->str().c_str(), i,  ret, errno, strerror(errno));
 	}
 
-	// 为每个 task 创建pollfd
+	printf("%s.%d: init_task over!\n", __func__, __LINE__);
+}
+
+struct pollfd * init_pollfd(vector<task_t> & task_vec)
+{
 	struct pollfd *pf = (struct pollfd*)calloc(1, sizeof(struct pollfd) * task_vec.size());
 	for(size_t i=0;i<task_vec.size();i++)
 	{
 		pf[i].fd = task_vec[i].fd;
 		pf[i].events = (POLLOUT | POLLERR | POLLHUP);
 	}
-	set<int> setRaiseFds;
+	return pf;
+}
 
-	size_t iWaitCnt = task_vec.size();
+string get_event_str(short int event) 
+{
+	if (event == POLLOUT) return "POLLOUT";
+	if (event == POLLERR) return "POLLERR";
+	if (event == POLLHUP) return "POLLHUP";
+	return "unknown";
+}
 
+void poll_task(vector<task_t> &task_vec, struct pollfd *pf, size_t& iWaitCnt, set<int>& setRaiseFds)
+{
+	printf("\n%s.%d poll_task iWaitCnt:%u, task_vec.size: %u \n", __func__, __LINE__, iWaitCnt, task_vec.size());
 	for(;;)
 	{
-		int ret = poll(pf, iWaitCnt, 1000);
-		printf("co.info: %p poll wait %ld ret %d\n",
-				co_self(), iWaitCnt, ret);
+		int ret = poll(pf, iWaitCnt, 1500);
+		printf("%s.%d: co.info: %p poll wait %ld ret %d\n", __func__, __LINE__, co_self(), iWaitCnt, ret);
+
 		for(int i=0;i<ret;i++)
 		{
-			printf("co %p fire fd %d revents 0x%X POLLOUT 0x%X POLLERR 0x%X POLLHUP 0x%X\n",
-					co_self(),
-					pf[i].fd,
-					pf[i].revents,
-					POLLOUT,
-					POLLERR,
-					POLLHUP
-					);
+			printf("%s.%d: co %p fire fd %d revents %s \n",__func__, __LINE__, 
+					co_self(), pf[i].fd, get_event_str(pf[i].revents).c_str());
+
 			setRaiseFds.insert( pf[i].fd );
 		}
+
 		if( setRaiseFds.size() == task_vec.size())
 		{
+			printf("%s.%d: setRaiseFds.size() == task_vec.size() all events over \n", __func__, __LINE__);
 			break;
 		}
 		if( ret <= 0 )
 		{
+			printf("%s.%d: [over] ret <= 0 \n", __func__, __LINE__);
 			break;
 		}
 
+		// collect left events;
 		iWaitCnt = 0;
 		for(size_t i=0;i<task_vec.size();i++)
 		{
@@ -171,44 +246,102 @@ static void *poll_routine( void *arg )
 				++iWaitCnt;
 			}
 		}
+
+
+		printf("%s.%d new iWaitCnt: %d\n", __func__, __LINE__, iWaitCnt);
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
+
+	printf("%s.%d poll_task over! \n", __func__, __LINE__);
+}
+
+void close_task(vector<task_t> &task_vec)
+{
+	printf("\n%s.%d close task! \n", __func__, __LINE__);
+
 	for(size_t i=0;i<task_vec.size();i++)
 	{
 		close( task_vec[i].fd );
 		task_vec[i].fd = -1;
 	}
+}
 
-	printf("co %p task cnt %ld fire %ld\n",
-			co_self(),task_vec.size(),setRaiseFds.size() );
+static void *poll_routine( void *arg )
+{
+	if (co_self())
+	{
+		printf("\n---------------- %s.%d poll_routine, co.info: %s start! --------------\n", __func__, __LINE__, co_self()->str().c_str());
+	}
+	else
+	{
+		printf("\n---------------- %s.%d poll_routine, main init start! --------------\n", __func__, __LINE__);
+	}
+	
+
+	co_enable_hook_sys();
+
+	vector<task_t> &task_vec = *(vector<task_t>*)arg;
+
+	init_task(task_vec);
+
+	// 为每个 task 创建pollfd
+	struct pollfd *pf = init_pollfd(task_vec);
+
+	set<int> setRaiseFds;
+	size_t iWaitCnt = task_vec.size();
+
+	poll_task(task_vec, pf, iWaitCnt, setRaiseFds);
+
+	close_task(task_vec);
+
+	printf("%s.%d co %p task cnt %ld fire %ld\n",__func__, __LINE__, 
+			co_self(), task_vec.size(), setRaiseFds.size()) ;
+
 	return 0;
 }
+
 int main(int argc,char *argv[])
 {
-	vector<task_t> v;
-	for(int i=1;i<argc;i+=2)
+	vector<string> address = {"127.0.0.1", "127.0.0.1"};
+	vector<int> port = {8112, 8113};
+	int ip_count = 2;
+
+	vector<task_t> task_vec;
+
+	for(int i=0; i<ip_count; i++)
 	{
 		task_t task = { 0 };
-		SetAddr( argv[i],atoi(argv[i+1]),task.addr );
-		v.push_back( task );
+		task.ip = address[i];
+		task.port = port[i];
+
+		printf("%s.%d: %s:%d \n", __func__, __LINE__, address[i].c_str(), port[i]);
+		SetAddr(address[i].c_str(), port[i], task.addr);
+		task_vec.push_back( task );
 	}
 
 //------------------------------------------------------------------------------------
-	printf("--------------------- main -------------------\n");
-	vector<task_t> v2 = v;
+	printf("\n --------------------- start main -------------------\n");
+	vector<task_t> v2 = task_vec;
 	poll_routine( &v2 );
-	printf("--------------------- routine -------------------\n");
 
-	for(int i=0;i<10;i++)
+	printf("\n--------------------- start routine -------------------\n");
+	int work_routine_count = 2;
+	for(int i=0; i<work_routine_count; i++)
 	{
+		printf("\n\n************** routine %d start *************\n",i);
+
 		stCoRoutine_t *co = 0;
-		vector<task_t> *v2 = new vector<task_t>();
-		*v2 = v;
-		co_create(&co, NULL, poll_routine, v2);
-		printf("routine i %d\n",i);
+		vector<task_t> *work_task = new vector<task_t>();
+		*work_task = task_vec;
+		co_create(&co, NULL, poll_routine, work_task);
+		
 		co_resume(co);
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	}
 
-	co_eventloop( co_get_epoll_ct(),0,0 );
+	co_eventloop(co_get_epoll_ct(), 0, 0);
 
 	return 0;
 }

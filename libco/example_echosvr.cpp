@@ -34,6 +34,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/wait.h>
+#include "data_struct.h"
 
 #ifdef __FreeBSD__
 #include <cstring>
@@ -44,8 +45,17 @@
 using namespace std;
 struct task_t
 {
-	stCoRoutine_t *co;
-	int fd;
+	stCoRoutine_t *	co;
+	int 			fd;
+
+	string str()
+	{
+		string result = "co.info: ";
+		result += co ? co->str() : "null";
+		result += ", fd: " + std::to_string(fd);
+
+		return result;
+	}
 };
 
 static stack<task_t*> g_readwrite;
@@ -63,14 +73,25 @@ static int SetNonBlock(int iSock)
 
 static void *readwrite_routine( void *arg )
 {
+	printf("\n------------ %s.%d: readwrite_routine ----------\n", __func__, __LINE__);
 	co_enable_hook_sys();
 
 	task_t *co = (task_t*)arg;
+
+	string co_str = "null";
+	if (co->co)
+	{
+		co_str = co->co->str();
+	}
+
+	printf("%s.%d: task.fd: %d, task.co: %s \n", __func__, __LINE__, co->fd, co_str.c_str());
+
 	char buf[ 1024 * 16 ];
 	for(;;)
 	{
 		if( -1 == co->fd )
 		{
+			printf("%s.%d: \n", __func__, __LINE__);
 			// push进去
 			g_readwrite.push( co );
 			// 切出
@@ -90,16 +111,23 @@ static void *readwrite_routine( void *arg )
 			struct pollfd pf = { 0 };
 			pf.fd = fd;
 			pf.events = (POLLIN|POLLERR|POLLHUP);
+
 			
-			co_poll( co_get_epoll_ct(),&pf,1,1000);
+			printf("%s.%d: add fd %d in epoll, add timeout: %d in timelist\n", __func__, __LINE__, fd, 1000);
+
+			co_poll(co_get_epoll_ct(), &pf, 1, 1000);
 
 			// 当超时或者可读事件到达时，进行read。所以read不一定成功，有可能是超时造成的
 			int ret = read( fd,buf,sizeof(buf) );
 
+			printf("%s.%d: read fd: %d, buf: %s, ret: %d \n", __func__, __LINE__, fd, buf, ret);
+
 			// 读多少就写多少
 			if( ret > 0 )
 			{
-				ret = write( fd,buf,ret );
+				ret = write( fd, buf, ret );
+
+				printf("%s.%d: write fd: %d, buf: %s, ret: %d \n", __func__, __LINE__, fd, buf, ret);
 			}
 
 			if( ret <= 0 )
@@ -118,20 +146,28 @@ static void *readwrite_routine( void *arg )
 int co_accept(int fd, struct sockaddr *addr, socklen_t *len );
 static void *accept_routine( void * )
 {
-	co_enable_hook_sys();
-	printf("accept_routine\n");
+	co_enable_hook_sys(); 
+	string co_str = "null";
+	if (co_self())
+	{
+		co_str = co_self()->str();
+	}
+
+	printf("\n---------------%s.%d: accept_routine .co.information: %s ------------\n", __func__, __LINE__, co_str.c_str());
+
 	fflush(stdout);
 	for(;;)
 	{
 		//printf("pid %ld g_readwrite.size %ld\n",getpid(),g_readwrite.size());
 		if( g_readwrite.empty() )
 		{
-			printf("empty\n"); //sleep
+			int sleep_millsecs = 1000;
+			printf("%s.%d: g_readwrite empty, wait: %d millsecs\n", __func__, __LINE__, sleep_millsecs); //sleep
 			struct pollfd pf = { 0 };
 			pf.fd = -1;
 
 			// sleep 1秒，等待有空余的协程
-			poll( &pf,1,1000);
+			poll(&pf, 1, sleep_millsecs);
 
 			continue;
 		}
@@ -142,18 +178,24 @@ static void *accept_routine( void * )
 
 		// accept
 		int fd = co_accept(g_listen_fd, (struct sockaddr *)&addr, &len);
+
+		printf("%s.%d: accept fd: %d\n", __func__, __LINE__, fd);
+
+		printf("[Error] aceept always failed!");
 		if( fd < 0 )
 		{
 			// 意思是，如果accept失败了，没办法，暂时切出去
 			struct pollfd pf = { 0 };
 			pf.fd = g_listen_fd;
 			pf.events = (POLLIN|POLLERR|POLLHUP);
-			co_poll( co_get_epoll_ct(),&pf,1,1000 );
+
+			printf("%s.%d: accept failed , have to swap out! ", __func__, __LINE__);
+			co_poll(co_get_epoll_ct(), &pf, 1, 1000);
 
 			continue;
 		}
 
-		if( g_readwrite.empty() )
+		if( g_readwrite.empty())
 		{
 			close( fd );
 			continue;
@@ -163,9 +205,11 @@ static void *accept_routine( void * )
 		SetNonBlock( fd );
 
 		task_t *co = g_readwrite.top();
+
+		printf("%s.%d: top task.info: %s\n", __func__, __LINE__, co->str().c_str());
 		co->fd = fd;
 		g_readwrite.pop();
-		co_resume( co->co );
+		co_resume(co->co);
 	}
 	return 0;
 }
@@ -219,21 +263,29 @@ static int CreateTcpSocket(const unsigned short shPort /* = 0 */,const char *psz
 
 int main(int argc,char *argv[])
 {
-	if(argc<5){
-		printf("Usage:\n"
-               "example_echosvr [IP] [PORT] [TASK_COUNT] [PROCESS_COUNT]\n"
-               "example_echosvr [IP] [PORT] [TASK_COUNT] [PROCESS_COUNT] -d   # daemonize mode\n");
-		return -1;
-	}
-	const char *ip = argv[1];
-	int port = atoi( argv[2] );
-	int cnt = atoi( argv[3] ); // task_count 协程数
-	int proccnt = atoi( argv[4] ); // 进程数
-	bool deamonize = argc >= 6 && strcmp(argv[5], "-d") == 0;
+	// if(argc<5){
+	// 	printf("Usage:\n"
+    //            "example_echosvr [IP] [PORT] [TASK_COUNT] [PROCESS_COUNT]\n"
+    //            "example_echosvr [IP] [PORT] [TASK_COUNT] [PROCESS_COUNT] -d   # daemonize mode\n");
+	// 	return -1;
+	// }
+	// const char *ip = argv[1];
+	// int port = atoi( argv[2] );
+	// int co_count = atoi( argv[3] ); // task_count 协程数
+	// int process_count = atoi( argv[4] ); // 进程数
+	// bool deamonize = argc >= 6 && strcmp(argv[5], "-d") == 0;
+
+	const char *ip = "127.0.0.1";
+	int port = 8911;
+	int co_count = 1; // task_count 协程数
+	int process_count = 1; // 进程数
+	bool deamonize = true;	
 
 	g_listen_fd = CreateTcpSocket( port,ip,true );
-	listen( g_listen_fd,1024 );
-	if(g_listen_fd==-1){
+	int ret = listen(g_listen_fd, 1024);
+
+	if(ret==-1)
+	{
 		printf("Port %d is in use\n", port);
 		return -1;
 	}
@@ -241,10 +293,11 @@ int main(int argc,char *argv[])
 
 	SetNonBlock( g_listen_fd );
 
-	for(int k=0;k<proccnt;k++)
+	for(int k=0;k<process_count;k++)
 	{
 
 		pid_t pid = fork();
+
 		if( pid > 0 )
 		{
 			continue;
@@ -253,10 +306,13 @@ int main(int argc,char *argv[])
 		{
 			break;
 		}
-		for(int i=0;i<cnt;i++)
+
+		for(int i=0;i<co_count;i++)
 		{
 			task_t * task = (task_t*)calloc( 1,sizeof(task_t) );
-			task->fd = -1;
+			// task->fd = -1;
+
+			task->fd = g_listen_fd;
 
 			// 创建一个协程
 			co_create( &(task->co),NULL,readwrite_routine,task );
@@ -265,18 +321,23 @@ int main(int argc,char *argv[])
 			co_resume( task->co );
 		}
 
+		printf("\n---------------------%s.%d: start accept_routine -----------\n", __func__, __LINE__);
 		// 启动listen协程
 		stCoRoutine_t *accept_co = NULL;
-		co_create( &accept_co,NULL,accept_routine,0 );
+		co_create(&accept_co, NULL, accept_routine, 0);
 		// 启动协程
 		co_resume( accept_co );
+
+		printf("\n");
 
 		// 启动事件循环
 		co_eventloop( co_get_epoll_ct(),0,0 );
 
 		exit(0);
 	}
+
 	if(!deamonize) wait(NULL);
+
 	return 0;
 }
 

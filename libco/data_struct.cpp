@@ -53,6 +53,7 @@ static uint32_t PollEvent2Epoll( short events )
 
 int stPoll_t::add_poll_items(struct pollfd fds[], const nfds_t nfds, const int epfd, const int timeout,  OnPreparePfn_t prepare_func, poll_pfn_t pollfunc)
 {
+    printf("%s.%d add epoll nfds: %d, epfd: %d, timeout: %d \n", __func__, __LINE__, nfds, epfd, timeout);
 	//2. add epoll
 	for(nfds_t i=0;i<nfds;i++)
 	{
@@ -77,7 +78,10 @@ int stPoll_t::add_poll_items(struct pollfd fds[], const nfds_t nfds, const int e
 			ev.events = PollEvent2Epoll( fds[i].events );
 
 			// 将fd添加入epoll中
+
+            
 			int ret = co_epoll_ctl( epfd, EPOLL_CTL_ADD, fds[i].fd, &ev );
+            printf("%s.%d add epoll event fd: %d, ret: %d\n", __func__, __LINE__, fds[i].fd, ret);
 
 			if (ret < 0 && errno == EPERM && nfds == 1 && pollfunc != NULL)
 			{

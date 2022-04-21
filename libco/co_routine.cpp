@@ -881,7 +881,7 @@ void co_eventloop( stCoEpoll_t *ctx,pfn_co_eventloop_t pfn,void *arg )
 		// 所以最长1ms，epoll_wait就会被唤醒
 
 		printf("\n----------- %s.%d: co_epoll_wait start! \n", __func__, __LINE__);
-		int ret = co_epoll_wait( ctx->iEpollFd, result,  stCoEpoll_t::_EPOLL_SIZE, 1000);
+		int ret = co_epoll_wait( ctx->iEpollFd, result,  stCoEpoll_t::_EPOLL_SIZE, 500);
 		printf("%s.%d: co_epoll_wait over ret is: %d! \n", __func__, __LINE__, ret);
 
 		stTimeoutItemLink_t *active = (ctx->pstActiveList);
@@ -1245,11 +1245,10 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 
 	if (!arg.add_poll_items(fds, nfds, epfd, timeout, OnPollPreparePfn, pollfunc))
 	{
+		printf("%s.%d: [Error] arg.add_poll_items \n", __func__, __LINE__);
 		delete &arg;
 		return -__LINE__;
 	}
-
-
 
 	//3.add timeout
 	// 获取当前时间
@@ -1291,8 +1290,12 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 
 	// 清理数据
 
+	// printf("1\n");
+
 	// 将该项从超时链表中删除
 	RemoveFromLink<stTimeoutItem_t,stTimeoutItemLink_t>( &arg );
+
+	// printf("2\n");
 
 	// 将该项涉及事件全部从epoll中删除掉
 	// 事件一定要删除，不删除会出现误resume的问题
@@ -1306,6 +1309,8 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 		fds[i].revents = arg.fds[i].revents;
 	}
 
+	// printf("3\n");
+
 	// 释放内存啦
 	int iRaiseCnt = arg.iRaiseCnt;
 
@@ -1313,6 +1318,8 @@ int co_poll_inner( stCoEpoll_t *ctx, struct pollfd fds[], nfds_t nfds, int timeo
 	arg.pPollItems = NULL;
 	free(arg.fds);
 	free(&arg);
+
+	// printf("4\n");
 
 	return iRaiseCnt;
 }

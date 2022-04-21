@@ -34,6 +34,9 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <signal.h>
+#include <thread>
+
+#include "data_struct.h"
 
 using namespace std;
 struct stEndPoint
@@ -98,13 +101,131 @@ void AddFailCnt()
 	}
 }
 
+
+void init_socket(stEndPoint* endpoint, 	int& fd, int& ret)
+{
+	
+	fd = socket(PF_INET, SOCK_STREAM, 0);
+
+	printf("%s.%d init fd: %d \n", __func__, __LINE__, fd);
+
+	struct sockaddr_in addr;
+	SetAddr(endpoint->ip, endpoint->port, addr);
+
+	printf("1\n");
+
+	ret = connect(fd,(struct sockaddr*)&addr,sizeof(addr));	// connect 啥？ why?
+
+	printf("2\n");
+
+	printf("%s.%d connect fd: %d, ret: %d \n",  __func__, __LINE__, fd, ret);
+}
+
+
+void write_data(int fd, string& str, int& ret, char* buf) 
+{
+	printf("%s.%d: write data \n", __func__, __LINE__);
+	ret = write( fd, str.c_str(), 8);
+
+	printf("%s.%d:[Write] co %p ret %d errno %d (%s)\n", 
+			__func__, __LINE__, co_self(), ret, errno, strerror(errno));		
+
+	if ( ret > 0 )
+	{
+		ret = read( fd, buf, sizeof(buf) );
+
+		printf("%s.%d:[Read] co %p ret %d errno %d (%s)\n", __func__, __LINE__, 
+				co_self(), ret,errno,strerror(errno));	
+
+		if ( ret <= 0 )
+		{
+			//printf("co %p read ret %d errno %d (%s)\n",
+			//		co_self(), ret,errno,strerror(errno));
+			close(fd);
+			fd = -1;
+			AddFailCnt();
+		}
+		else
+		{
+			//printf("echo %s fd %d\n", buf,fd);
+			AddSuccCnt();
+		}
+	}
+	else
+	{
+		printf("%s.%d co %p write ret %d errno %d (%s)\n", __func__, __LINE__, 
+				co_self(), ret,errno,strerror(errno));
+		close(fd);
+		fd = -1;
+		AddFailCnt();
+	}
+}
+
+void poll_event(int& fd, int& ret)
+{
+	printf("%s.%d init socket fd: %d, ret: %d, errno: %s \n",
+				__func__, __LINE__, fd, ret, strerror(errno));
+
+	string co_str = co_self() ? co_self()->str() : "null";
+
+	printf("%s.%d: poll event start, co.info: %s \n", __func__, __LINE__, co_str.c_str());
+
+	struct pollfd pf = { 0 };
+	pf.fd = fd;
+	pf.events = (POLLOUT|POLLERR|POLLHUP);
+
+	// add fd event and timeout event;
+	co_poll(co_get_epoll_ct(), &pf, 1, 2000);
+
+	printf("%s.%d: poll event over, co.info: %s \n", __func__, __LINE__, co_str.c_str());
+}
+
+int check_fd(int& fd)
+{
+	printf("%s.%d: check_fd! \n", __func__, __LINE__);
+
+	int ret = 0;
+	int error = 0;
+	uint32_t socklen = sizeof(error);
+	errno = 0;
+
+	ret = getsockopt(fd, SOL_SOCKET, SO_ERROR,(void *)&error,  &socklen);
+
+	printf("%s.%d getsockopt fd: %d, ret: %d, errno: %s \n",
+				__func__, __LINE__, fd, ret, strerror(errno));
+
+	if ( ret == -1 ) 
+	{       
+		printf("getsockopt ERROR ret %d %d:%s\n", ret, errno, strerror(errno));
+		close(fd);
+		fd = -1;
+		AddFailCnt();
+		return 0;
+	}       
+	if ( error ) 
+	{       
+		errno = error;
+		printf("connect ERROR ret %d %d:%s\n", error, errno, strerror(errno));
+		close(fd);
+		fd = -1;
+		AddFailCnt();
+		return 0;
+	}    
+
+	return 1;
+}
+
 static void *readwrite_routine( void *arg )
 {
+	string co_str = "null";
+	if (co_self()) co_str = co_self()->str();
 
+	printf("------------ readwrite_routine start --------------- \n");
+	printf("%s.%d: co.info: %s\n", __func__, __LINE__, co_str.c_str());
 	co_enable_hook_sys();
 
 	stEndPoint *endpoint = (stEndPoint *)arg;
-	char str[8]="sarlmol";
+	string str = NanoTimeStr();
 	char buf[ 1024 * 16 ];
 	int fd = -1;
 	int ret = 0;
@@ -112,69 +233,16 @@ static void *readwrite_routine( void *arg )
 	{
 		if ( fd < 0 )
 		{
-			fd = socket(PF_INET, SOCK_STREAM, 0);
-			struct sockaddr_in addr;
-			SetAddr(endpoint->ip, endpoint->port, addr);
-			ret = connect(fd,(struct sockaddr*)&addr,sizeof(addr));
+			init_socket(endpoint, fd, ret);
 						
 			if ( errno == EALREADY || errno == EINPROGRESS )
 			{       
-				struct pollfd pf = { 0 };
-				pf.fd = fd;
-				pf.events = (POLLOUT|POLLERR|POLLHUP);
-				co_poll( co_get_epoll_ct(),&pf,1,200);
-				//check connect
-				int error = 0;
-				uint32_t socklen = sizeof(error);
-				errno = 0;
-				ret = getsockopt(fd, SOL_SOCKET, SO_ERROR,(void *)&error,  &socklen);
-				if ( ret == -1 ) 
-				{       
-					//printf("getsockopt ERROR ret %d %d:%s\n", ret, errno, strerror(errno));
-					close(fd);
-					fd = -1;
-					AddFailCnt();
-					continue;
-				}       
-				if ( error ) 
-				{       
-					errno = error;
-					//printf("connect ERROR ret %d %d:%s\n", error, errno, strerror(errno));
-					close(fd);
-					fd = -1;
-					AddFailCnt();
-					continue;
-				}       
-			} 
-	  			
+				poll_event(fd, ret);
+
+				if (!check_fd(fd)) continue;
+			} 	  			
 		}
-		
-		ret = write( fd,str, 8);
-		if ( ret > 0 )
-		{
-			ret = read( fd,buf, sizeof(buf) );
-			if ( ret <= 0 )
-			{
-				//printf("co %p read ret %d errno %d (%s)\n",
-				//		co_self(), ret,errno,strerror(errno));
-				close(fd);
-				fd = -1;
-				AddFailCnt();
-			}
-			else
-			{
-				//printf("echo %s fd %d\n", buf,fd);
-				AddSuccCnt();
-			}
-		}
-		else
-		{
-			//printf("co %p write ret %d errno %d (%s)\n",
-			//		co_self(), ret,errno,strerror(errno));
-			close(fd);
-			fd = -1;
-			AddFailCnt();
-		}
+		write_data(fd, str, ret, buf);
 	}
 	return 0;
 }
@@ -182,36 +250,47 @@ static void *readwrite_routine( void *arg )
 int main(int argc,char *argv[])
 {
 	stEndPoint endpoint;
-	endpoint.ip = argv[1];
-	endpoint.port = atoi(argv[2]);
-	int cnt = atoi( argv[3] );
-	int proccnt = atoi( argv[4] );
+	// endpoint.ip = argv[1];
+	// endpoint.port = atoi(argv[2]);
+	// int cnt = atoi( argv[3] );
+	// int process_count = atoi( argv[4] );
+
+	endpoint.ip = "127.0.0.1";
+	endpoint.port = 8911;
+	int co_count = 1;
+	int process_count = 1;	
 	
 	struct sigaction sa;
 	sa.sa_handler = SIG_IGN;
 	sigaction( SIGPIPE, &sa, NULL );
 	
-	for(int k=0;k<proccnt;k++)
+	for(int k=0;k<process_count;k++)
 	{
 
-		pid_t pid = fork();
-		if( pid > 0 )
-		{
-			continue;
-		}
-		else if( pid < 0 )
-		{
-			break;
-		}
-		for(int i=0;i<cnt;i++)
+		// pid_t pid = fork();
+		// if( pid > 0 )
+		// {
+		// 	printf("%s.%d fork pid: %d\n", __func__, __LINE__, pid);
+		// 	continue;
+		// }
+		// else if( pid < 0 )
+		// {
+		// 	printf("%s.%d fork pid: %d  Failed!\n", __func__, __LINE__, pid);
+		// 	break;
+		// }
+
+		for(int i=0;i<co_count;i++)
 		{
 			stCoRoutine_t *co = 0;
-			co_create( &co,NULL,readwrite_routine, &endpoint);
+			co_create(&co, NULL, readwrite_routine, &endpoint);
+			printf("%s.%d: create co: %s \n", __func__, __LINE__, co->str().c_str());
 			co_resume( co );
 		}
-		co_eventloop( co_get_epoll_ct(),0,0 );
+		co_eventloop(co_get_epoll_ct(), 0, 0);
 
-		exit(0);
+		std::this_thread::sleep_for(std::chrono::milliseconds(4000));
+
+		// exit(1);
 	}
 	return 0;
 }

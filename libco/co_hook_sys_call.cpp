@@ -615,12 +615,21 @@ extern int co_poll_inner( stCoEpoll_t *ctx,struct pollfd fds[], nfds_t nfds, int
 */
 int poll(struct pollfd fds[], nfds_t nfds, int timeout)
 {
-	printf("%s.%d: \n",__func__, __LINE__);
+	if (co_self())
+	{
+		printf("%s.%d: co.info: %s\n",__func__, __LINE__, co_self()->str().c_str());
+	}
+	else
+	{
+		printf("%s.%d: co is null!\n",__func__, __LINE__);
+	}
+	
 
 	HOOK_SYS_FUNC( poll );
 
 	if( !co_is_enable_sys_hook() )
 	{
+		printf("%s.%d co_is_enable_sys_hook is false! \n", __func__, __LINE__);
 		return g_sys_poll_func( fds,nfds,timeout );
 	}
 
